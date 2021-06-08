@@ -1,3 +1,4 @@
+use rosc::OscPacket;
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -41,6 +42,34 @@ impl PiBlaster {
         let s = format!("{}={}\n", pin.index, value);
         let s = s.as_bytes();
         self.outfile.write_all(s);
+    }
+}
+
+struct OSCHandler {
+    path_map: HashMap<OscPath, GpioPin>,
+    piblaster: PiBlaster,
+}
+
+impl OSCHandler {
+    pub fn new(path_map: HashMap<OscPath, GpioPin>, piblaster: PiBlaster) -> Self {
+        Self {
+            path_map: path_map,
+            piblaster: piblaster,
+        }
+    }
+
+    fn set_path(path: OscPath, value: f32) {}
+
+    pub fn handle_packet(packet: OscPacket) {
+        match packet {
+            OscPacket::Message(msg) => {
+                println!("OSC address: {}", msg.addr);
+                println!("OSC arguments: {:?}", msg.args);
+            }
+            OscPacket::Bundle(bundle) => {
+                println!("OSC Bundle: {:?}", bundle);
+            }
+        }
     }
 }
 
