@@ -40,15 +40,15 @@ struct PiBlaster {
 }
 
 impl PiBlaster {
-    pub fn new(path: &String, pins: &Vec<GpioPin>) -> Self {
+    pub fn new(path: &String, pins: &Vec<GpioPin>) -> Result<Self> {
         let mut cvs = HashMap::new();
         for pin in pins {
             cvs.insert(*pin, 0.0);
         }
-        Self {
+        Ok(Self {
             current_values: cvs,
-            outfile: OpenOptions::new().write(true).open(path).unwrap(),
-        }
+            outfile: OpenOptions::new().write(true).open(path)?,
+        })
     }
 
     pub fn set_pin(&mut self, pin: &GpioPin, value: f32) -> Result<()> {
@@ -135,7 +135,11 @@ impl OSCHandler {
     }
 }
 
-fn receive_osc_packets(addr: SocketAddrV4, mut osc_handler: OSCHandler, running: Arc<AtomicBool>) -> Result<()> {
+fn receive_osc_packets(
+    addr: SocketAddrV4,
+    mut osc_handler: OSCHandler,
+    running: Arc<AtomicBool>,
+) -> Result<()> {
     let sock = UdpSocket::bind(addr)?;
     // Set a timeout as to not block indefinitely to allow for ctrlc handling
     sock.set_read_timeout(Some(Duration::new(1, 0)))?;
@@ -149,12 +153,12 @@ fn receive_osc_packets(addr: SocketAddrV4, mut osc_handler: OSCHandler, running:
                 trace!("Received {} bytes from {}", size, addr);
                 let packet = rosc::decoder::decode(&buf[..size])?;
                 osc_handler.handle_packet(packet)?;
-            },
+            }
             // Error: either timeout or something went wrong
             Err(e) => {
                 match e.kind() {
                     std::io::ErrorKind::WouldBlock => continue,
-                    std::io::ErrorKind::Interrupted => continue,  // interrupts are handled by ctrlc
+                    std::io::ErrorKind::Interrupted => continue, // interrupts are handled by ctrlc
                     _ => return Err(e.into()),
                 }
             }
@@ -210,7 +214,7 @@ fn main() -> Result<()> {
     init_logger(verbosity);
     let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), opts.port);
     info!("Listening on address {}", addr);
-    let piblaster = PiBlaster::new(&"./piblaster.out".to_string(), &vec![GpioPin::new(0)]);
+    let piblaster = PiBlaster::new(&"./piblaster.out".to_string(), &vec![GpioPin::new(0)])?;
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
