@@ -1,15 +1,26 @@
 use rosc::OscPacket;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+use std::net::{SocketAddrV4, UdpSocket};
+use std::str::FromStr;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct GpioPin {
     index: usize,
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct OscPath {
     path: String,
+}
+
+impl OscPath {
+    pub fn new(path: String) -> Self {
+        Self {
+            path: path
+        }
+    }
 }
 
 struct PiBlaster {
@@ -43,6 +54,10 @@ impl PiBlaster {
         let s = s.as_bytes();
         self.outfile.write_all(s);
     }
+
+    pub fn ensure_write_out(&mut self) {
+        self.outfile.sync_data();
+    }
 }
 
 struct OSCHandler {
@@ -58,21 +73,72 @@ impl OSCHandler {
         }
     }
 
-    fn set_path(path: OscPath, value: f32) {}
+    fn set_path(&mut self, path: &OscPath, value: f32) {
+        let pin = self.path_map[path];
+        self.piblaster.set_pin(&pin, value);
+    }
 
-    pub fn handle_packet(packet: OscPacket) {
+    fn handle_packet_internal(&mut self, packet: OscPacket) {
         match packet {
             OscPacket::Message(msg) => {
-                println!("OSC address: {}", msg.addr);
-                println!("OSC arguments: {:?}", msg.args);
+                if msg.args.len() != 1 {
+                    return;
+                }
+                let val = match msg.args[0] {
+                    rosc::OscType::Float(f) => Some(f),
+                    rosc::OscType::Double(d) => Some(d as f32),
+                    _ => None
+                };
+                if let Some(v) = val {
+                    let path = OscPath::new(msg.addr);
+                    if self.path_map.contains_key(&path) {
+                        self.set_path(&path, v);
+                    }
+                }
             }
             OscPacket::Bundle(bundle) => {
-                println!("OSC Bundle: {:?}", bundle);
+                for packet in bundle.content {
+                    self.handle_packet_internal(packet);
+                }
+            }
+        }
+    }
+
+    pub fn handle_packet(&mut self, packet: OscPacket) {
+        self.handle_packet_internal(packet);
+        self.piblaster.ensure_write_out();
+    }
+}
+
+fn receive_osc_packets(addr: SocketAddrV4, mut osc_handler: OSCHandler) {
+    let sock = UdpSocket::bind(addr).unwrap();
+
+    let mut buf = [0u8; rosc::decoder::MTU];
+
+    loop {
+        match sock.recv_from(&mut buf) {
+            Ok((size, addr)) => {
+                let packet = rosc::decoder::decode(&buf[..size]).unwrap();
+                osc_handler.handle_packet(packet);
+            }
+            Err(e) => {
+                break;
             }
         }
     }
 }
 
+// TODO
+// Create a config file that defines which pin is mapped to which path
+// 0: /topLeft/red
+// 3: /topLeft/blue
+// 4: /topLeft/green
+// etc...
+
 fn main() {
     println!("Hello, world!");
+    let addr = match SocketAddrV4::from_str("ip:port") {
+        Ok(addr) => addr,
+        Err(_) => panic!("lala"),
+    };
 }
