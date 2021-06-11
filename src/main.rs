@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
+use anyhow::{Result, bail};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct GpioPin {
@@ -47,23 +48,26 @@ impl PiBlaster {
         }
     }
 
-    pub fn set_pin(&mut self, pin: &GpioPin, value: f32) {
+    pub fn set_pin(&mut self, pin: &GpioPin, value: f32) -> Result<()> {
         if !self.current_values.contains_key(pin) {
-            println!("Missing key!");
-            return;
+            bail!("Trying to set a key that hasn't been configured");
         }
         let current_value = *self.current_values.get(&pin).unwrap();
         if value == current_value {
-            return;
+            return Ok(());
         }
         self.current_values.insert(*pin, value);
         let s = format!("{}={}\n", pin.index, value);
         let s = s.as_bytes();
-        self.outfile.write_all(s);
+        trace!("Writing line to file");
+        self.outfile.write_all(s)?;
+        Ok(())
     }
 
-    pub fn ensure_write_out(&mut self) {
-        self.outfile.sync_data();
+    pub fn ensure_write_out(&mut self) -> Result<()> {
+        trace!("Syncing data to file");
+        self.outfile.sync_data()?;
+        Ok(())
     }
 }
 
@@ -80,60 +84,60 @@ impl OSCHandler {
         }
     }
 
-    fn set_path(&mut self, path: &OscPath, value: f32) {
+    fn set_path(&mut self, path: &OscPath, value: f32) -> Result<()> {
         debug!("Setting {} to {}", path.path, value);
         let pin = self.path_map[path];
-        self.piblaster.set_pin(&pin, value);
+        self.piblaster.set_pin(&pin, value)?;
+        Ok(())
     }
 
-    fn handle_packet_internal(&mut self, packet: OscPacket) {
+    fn handle_packet_internal(&mut self, packet: OscPacket) -> Result<()> {
         match packet {
             OscPacket::Message(msg) => {
                 if msg.args.len() != 1 {
-                    return;
+                    warn!("Received message with {} arguments (should be 1)", msg.args.len());
                 }
                 let val = match msg.args[0] {
                     rosc::OscType::Float(f) => Some(f),
                     rosc::OscType::Double(d) => Some(d as f32),
-                    _ => None,
+                    _ => {  // TODO the warning could be made more specific
+                        warn!("Received wrong type, nly Float/Double supported");
+                        None
+                    },
                 };
                 if let Some(v) = val {
                     let path = OscPath::new(msg.addr);
                     if self.path_map.contains_key(&path) {
-                        self.set_path(&path, v);
+                        self.set_path(&path, v)?;
                     }
                 }
             }
             OscPacket::Bundle(bundle) => {
                 for packet in bundle.content {
-                    self.handle_packet_internal(packet);
+                    self.handle_packet_internal(packet)?;
                 }
             }
-        }
+        };
+        Ok(())
     }
 
-    pub fn handle_packet(&mut self, packet: OscPacket) {
-        self.handle_packet_internal(packet);
-        self.piblaster.ensure_write_out();
+    pub fn handle_packet(&mut self, packet: OscPacket) -> Result<()> {
+        self.handle_packet_internal(packet)?;
+        self.piblaster.ensure_write_out()?;
+        Ok(())
     }
 }
 
-fn receive_osc_packets(addr: SocketAddrV4, mut osc_handler: OSCHandler) {
+fn receive_osc_packets(addr: SocketAddrV4, mut osc_handler: OSCHandler) -> Result<()> {
     let sock = UdpSocket::bind(addr).unwrap();
 
     let mut buf = [0u8; rosc::decoder::MTU];
 
     loop {
-        match sock.recv_from(&mut buf) {
-            Ok((size, addr)) => {
-                trace!("Received {} bytes from {}", size, addr);
-                let packet = rosc::decoder::decode(&buf[..size]).unwrap();
-                osc_handler.handle_packet(packet);
-            }
-            Err(e) => {
-                break;
-            }
-        }
+        let (size, addr) = sock.recv_from(&mut buf)?;
+        trace!("Received {} bytes from {}", size, addr);
+        let packet = rosc::decoder::decode(&buf[..size]).unwrap();
+        osc_handler.handle_packet(packet)?;
     }
 }
 
@@ -177,7 +181,7 @@ fn init_logger(verbosity: isize) {
     ).expect("Could not create logger");
 }
 
-fn main() {
+fn main() -> Result<()> {
     let opts: Opts = Opts::parse();
     let verbosity = if opts.quiet { -1 } else { opts.verbose };
     init_logger(verbosity);
@@ -190,5 +194,6 @@ fn main() {
         },
         piblaster,
     );
-    receive_osc_packets(addr, osc_handler);
+    receive_osc_packets(addr, osc_handler)?;
+    Ok(())
 }
