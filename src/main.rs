@@ -1,3 +1,4 @@
+use anyhow::{bail, Result};
 use clap::{AppSettings, Clap};
 use log::{debug, info, trace, warn};
 use maplit::hashmap;
@@ -7,7 +8,9 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
-use anyhow::{Result, bail};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct GpioPin {
@@ -72,15 +75,15 @@ impl PiBlaster {
 }
 
 struct OSCHandler {
-    path_map: HashMap<OscPath, GpioPin>,
     piblaster: PiBlaster,
+    path_map: HashMap<OscPath, GpioPin>,
 }
 
 impl OSCHandler {
-    pub fn new(path_map: HashMap<OscPath, GpioPin>, piblaster: PiBlaster) -> Self {
+    pub fn new(piblaster: PiBlaster, path_map: HashMap<OscPath, GpioPin>) -> Self {
         Self {
-            path_map: path_map,
             piblaster: piblaster,
+            path_map: path_map,
         }
     }
 
@@ -95,15 +98,19 @@ impl OSCHandler {
         match packet {
             OscPacket::Message(msg) => {
                 if msg.args.len() != 1 {
-                    warn!("Received message with {} arguments (should be 1)", msg.args.len());
+                    warn!(
+                        "Received message with {} arguments (should be 1)",
+                        msg.args.len()
+                    );
                 }
                 let val = match msg.args[0] {
                     rosc::OscType::Float(f) => Some(f),
                     rosc::OscType::Double(d) => Some(d as f32),
-                    _ => {  // TODO the warning could be made more specific
+                    _ => {
+                        // TODO the warning could be made more specific
                         warn!("Received wrong type, nly Float/Double supported");
                         None
-                    },
+                    }
                 };
                 if let Some(v) = val {
                     let path = OscPath::new(msg.addr);
@@ -128,17 +135,32 @@ impl OSCHandler {
     }
 }
 
-fn receive_osc_packets(addr: SocketAddrV4, mut osc_handler: OSCHandler) -> Result<()> {
-    let sock = UdpSocket::bind(addr).unwrap();
+fn receive_osc_packets(addr: SocketAddrV4, mut osc_handler: OSCHandler, running: Arc<AtomicBool>) -> Result<()> {
+    let sock = UdpSocket::bind(addr)?;
+    // Set a timeout as to not block indefinitely to allow for ctrlc handling
+    sock.set_read_timeout(Some(Duration::new(1, 0)))?;
 
     let mut buf = [0u8; rosc::decoder::MTU];
 
-    loop {
-        let (size, addr) = sock.recv_from(&mut buf)?;
-        trace!("Received {} bytes from {}", size, addr);
-        let packet = rosc::decoder::decode(&buf[..size]).unwrap();
-        osc_handler.handle_packet(packet)?;
+    while running.load(Ordering::SeqCst) {
+        match sock.recv_from(&mut buf) {
+            // default case, handle packet
+            Ok((size, addr)) => {
+                trace!("Received {} bytes from {}", size, addr);
+                let packet = rosc::decoder::decode(&buf[..size])?;
+                osc_handler.handle_packet(packet)?;
+            },
+            // Error: either timeout or something went wrong
+            Err(e) => {
+                match e.kind() {
+                    std::io::ErrorKind::WouldBlock => continue,
+                    std::io::ErrorKind::Interrupted => continue,  // interrupts are handled by ctrlc
+                    _ => return Err(e.into()),
+                }
+            }
+        }
     }
+    Ok(())
 }
 
 // TODO
@@ -178,7 +200,8 @@ fn init_logger(verbosity: isize) {
         sl::Config::default(),
         sl::TerminalMode::Stderr,
         sl::ColorChoice::Auto,
-    ).expect("Could not create logger");
+    )
+    .expect("Could not create logger");
 }
 
 fn main() -> Result<()> {
@@ -188,12 +211,17 @@ fn main() -> Result<()> {
     let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), opts.port);
     info!("Listening on address {}", addr);
     let piblaster = PiBlaster::new(&"./piblaster.out".to_string(), &vec![GpioPin::new(0)]);
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })?;
     let osc_handler = OSCHandler::new(
+        piblaster,
         hashmap! {
             OscPath::new("/1/fader1".to_string()) => GpioPin::new(0)
         },
-        piblaster,
     );
-    receive_osc_packets(addr, osc_handler)?;
+    receive_osc_packets(addr, osc_handler, running)?;
     Ok(())
 }
