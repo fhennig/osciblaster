@@ -1,11 +1,12 @@
+use clap::{AppSettings, Clap};
+use log::{debug, info, trace, warn};
+use maplit::hashmap;
 use rosc::OscPacket;
+use simplelog as sl;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::net::{SocketAddrV4, UdpSocket, Ipv4Addr};
-use std::str::FromStr;
-use maplit::hashmap;
-use clap::{AppSettings, Clap};
+use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct GpioPin {
@@ -14,9 +15,7 @@ struct GpioPin {
 
 impl GpioPin {
     pub fn new(index: usize) -> Self {
-        Self {
-            index: index
-        }
+        Self { index: index }
     }
 }
 
@@ -27,9 +26,7 @@ struct OscPath {
 
 impl OscPath {
     pub fn new(path: String) -> Self {
-        Self {
-            path: path
-        }
+        Self { path: path }
     }
 }
 
@@ -84,6 +81,7 @@ impl OSCHandler {
     }
 
     fn set_path(&mut self, path: &OscPath, value: f32) {
+        debug!("Setting {} to {}", path.path, value);
         let pin = self.path_map[path];
         self.piblaster.set_pin(&pin, value);
     }
@@ -97,7 +95,7 @@ impl OSCHandler {
                 let val = match msg.args[0] {
                     rosc::OscType::Float(f) => Some(f),
                     rosc::OscType::Double(d) => Some(d as f32),
-                    _ => None
+                    _ => None,
                 };
                 if let Some(v) = val {
                     let path = OscPath::new(msg.addr);
@@ -128,6 +126,7 @@ fn receive_osc_packets(addr: SocketAddrV4, mut osc_handler: OSCHandler) {
     loop {
         match sock.recv_from(&mut buf) {
             Ok((size, addr)) => {
+                trace!("Received {} bytes from {}", size, addr);
                 let packet = rosc::decoder::decode(&buf[..size]).unwrap();
                 osc_handler.handle_packet(packet);
             }
@@ -150,7 +149,7 @@ fn receive_osc_packets(addr: SocketAddrV4, mut osc_handler: OSCHandler) {
 struct Opts {
     /// How much information to print. Can be provided up to three times
     #[clap(short, long, parse(from_occurrences))]
-    verbose: usize,
+    verbose: isize,
     /// Print no output at all
     #[clap(short, long)]
     quiet: bool,
@@ -159,13 +158,37 @@ struct Opts {
     port: u16,
 }
 
+fn level_filter_from_level_index(level_index: isize) -> sl::LevelFilter {
+    match level_index {
+        -1 => sl::LevelFilter::Off,
+        0 => sl::LevelFilter::Warn,
+        1 => sl::LevelFilter::Info,
+        2 => sl::LevelFilter::Debug,
+        _ => sl::LevelFilter::Trace,
+    }
+}
+
+fn init_logger(verbosity: isize) {
+    sl::TermLogger::init(
+        level_filter_from_level_index(verbosity),
+        sl::Config::default(),
+        sl::TerminalMode::Stderr,
+        sl::ColorChoice::Auto,
+    ).expect("Could not create logger");
+}
 
 fn main() {
     let opts: Opts = Opts::parse();
+    let verbosity = if opts.quiet { -1 } else { opts.verbose };
+    init_logger(verbosity);
     let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), opts.port);
+    info!("Listening on address {}", addr);
     let piblaster = PiBlaster::new(&"./piblaster.out".to_string(), &vec![GpioPin::new(0)]);
-    let osc_handler = OSCHandler::new(hashmap!{
-        OscPath::new("/1/fader1".to_string()) => GpioPin::new(0)
-    }, piblaster);
+    let osc_handler = OSCHandler::new(
+        hashmap! {
+            OscPath::new("/1/fader1".to_string()) => GpioPin::new(0)
+        },
+        piblaster,
+    );
     receive_osc_packets(addr, osc_handler);
 }
