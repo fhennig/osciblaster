@@ -1,6 +1,6 @@
+use crate::piblaster::{GpioPin, PiBlaster};
 use anyhow::Result;
 use log::{debug, warn};
-use crate::piblaster::{GpioPin, PiBlaster};
 use rosc::OscPacket;
 use std::collections::HashMap;
 
