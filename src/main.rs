@@ -4,10 +4,19 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::net::{SocketAddrV4, UdpSocket};
 use std::str::FromStr;
+use maplit::hashmap;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct GpioPin {
     index: usize,
+}
+
+impl GpioPin {
+    pub fn new(index: usize) -> Self {
+        Self {
+            index: index
+        }
+    }
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -137,8 +146,13 @@ fn receive_osc_packets(addr: SocketAddrV4, mut osc_handler: OSCHandler) {
 
 fn main() {
     println!("Hello, world!");
-    let addr = match SocketAddrV4::from_str("ip:port") {
+    let addr = match SocketAddrV4::from_str("0.0.0.0:4243") {
         Ok(addr) => addr,
         Err(_) => panic!("lala"),
     };
+    let piblaster = PiBlaster::new(&"./piblaster.out".to_string(), &vec![GpioPin::new(0)]);
+    let osc_handler = OSCHandler::new(hashmap!{
+        OscPath::new("/1/fader1".to_string()) => GpioPin::new(0)
+    }, piblaster);
+    receive_osc_packets(addr, osc_handler);
 }
