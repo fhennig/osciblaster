@@ -2,9 +2,10 @@ use rosc::OscPacket;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::net::{SocketAddrV4, UdpSocket};
+use std::net::{SocketAddrV4, UdpSocket, Ipv4Addr};
 use std::str::FromStr;
 use maplit::hashmap;
+use clap::{AppSettings, Clap};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct GpioPin {
@@ -144,12 +145,24 @@ fn receive_osc_packets(addr: SocketAddrV4, mut osc_handler: OSCHandler) {
 // 4: /topLeft/green
 // etc...
 
+#[derive(Clap)]
+#[clap(setting = AppSettings::ColoredHelp)]
+struct Opts {
+    /// How much information to print. Can be provided up to three times
+    #[clap(short, long, parse(from_occurrences))]
+    verbose: usize,
+    /// Print no output at all
+    #[clap(short, long)]
+    quiet: bool,
+    /// The port to listen on
+    #[clap(short, long)]
+    port: u16,
+}
+
+
 fn main() {
-    println!("Hello, world!");
-    let addr = match SocketAddrV4::from_str("0.0.0.0:4243") {
-        Ok(addr) => addr,
-        Err(_) => panic!("lala"),
-    };
+    let opts: Opts = Opts::parse();
+    let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), opts.port);
     let piblaster = PiBlaster::new(&"./piblaster.out".to_string(), &vec![GpioPin::new(0)]);
     let osc_handler = OSCHandler::new(hashmap!{
         OscPath::new("/1/fader1".to_string()) => GpioPin::new(0)
