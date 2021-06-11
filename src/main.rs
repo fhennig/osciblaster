@@ -1,139 +1,17 @@
-use anyhow::{bail, Result};
+mod conf;
+mod osc_handler;
+mod piblaster;
+use anyhow::Result;
 use clap::{AppSettings, Clap};
-use log::{debug, info, trace, warn};
+use log::{info, trace};
 use maplit::hashmap;
-use rosc::OscPacket;
+use osc_handler::{OscPath, OSCHandler};
+use piblaster::{GpioPin, PiBlaster};
 use simplelog as sl;
-use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::io::Write;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-struct GpioPin {
-    index: usize,
-}
-
-impl GpioPin {
-    pub fn new(index: usize) -> Self {
-        Self { index: index }
-    }
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-struct OscPath {
-    path: String,
-}
-
-impl OscPath {
-    pub fn new(path: String) -> Self {
-        Self { path: path }
-    }
-}
-
-struct PiBlaster {
-    current_values: HashMap<GpioPin, f32>,
-    outfile: File,
-}
-
-impl PiBlaster {
-    pub fn new(path: &String, pins: &Vec<GpioPin>) -> Result<Self> {
-        let mut cvs = HashMap::new();
-        for pin in pins {
-            cvs.insert(*pin, 0.0);
-        }
-        Ok(Self {
-            current_values: cvs,
-            outfile: OpenOptions::new().write(true).open(path)?,
-        })
-    }
-
-    pub fn set_pin(&mut self, pin: &GpioPin, value: f32) -> Result<()> {
-        if !self.current_values.contains_key(pin) {
-            bail!("Trying to set a key that hasn't been configured");
-        }
-        let current_value = *self.current_values.get(&pin).unwrap();
-        if value == current_value {
-            return Ok(());
-        }
-        self.current_values.insert(*pin, value);
-        let s = format!("{}={}\n", pin.index, value);
-        let s = s.as_bytes();
-        trace!("Writing line to file");
-        self.outfile.write_all(s)?;
-        Ok(())
-    }
-
-    pub fn ensure_write_out(&mut self) -> Result<()> {
-        trace!("Syncing data to file");
-        self.outfile.sync_data()?;
-        Ok(())
-    }
-}
-
-struct OSCHandler {
-    piblaster: PiBlaster,
-    path_map: HashMap<OscPath, GpioPin>,
-}
-
-impl OSCHandler {
-    pub fn new(piblaster: PiBlaster, path_map: HashMap<OscPath, GpioPin>) -> Self {
-        Self {
-            piblaster: piblaster,
-            path_map: path_map,
-        }
-    }
-
-    fn set_path(&mut self, path: &OscPath, value: f32) -> Result<()> {
-        debug!("Setting {} to {}", path.path, value);
-        let pin = self.path_map[path];
-        self.piblaster.set_pin(&pin, value)?;
-        Ok(())
-    }
-
-    fn handle_packet_internal(&mut self, packet: OscPacket) -> Result<()> {
-        match packet {
-            OscPacket::Message(msg) => {
-                if msg.args.len() != 1 {
-                    warn!(
-                        "Received message with {} arguments (should be 1)",
-                        msg.args.len()
-                    );
-                }
-                let val = match msg.args[0] {
-                    rosc::OscType::Float(f) => Some(f),
-                    rosc::OscType::Double(d) => Some(d as f32),
-                    _ => {
-                        // TODO the warning could be made more specific
-                        warn!("Received wrong type, nly Float/Double supported");
-                        None
-                    }
-                };
-                if let Some(v) = val {
-                    let path = OscPath::new(msg.addr);
-                    if self.path_map.contains_key(&path) {
-                        self.set_path(&path, v)?;
-                    }
-                }
-            }
-            OscPacket::Bundle(bundle) => {
-                for packet in bundle.content {
-                    self.handle_packet_internal(packet)?;
-                }
-            }
-        };
-        Ok(())
-    }
-
-    pub fn handle_packet(&mut self, packet: OscPacket) -> Result<()> {
-        self.handle_packet_internal(packet)?;
-        self.piblaster.ensure_write_out()?;
-        Ok(())
-    }
-}
 
 fn receive_osc_packets(
     addr: SocketAddrV4,
@@ -214,6 +92,7 @@ fn main() -> Result<()> {
     init_logger(verbosity);
     let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), opts.port);
     info!("Listening on address {}", addr);
+    conf::load_config()?;
     let piblaster = PiBlaster::new(&"./piblaster.out".to_string(), &vec![GpioPin::new(0)])?;
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -223,7 +102,7 @@ fn main() -> Result<()> {
     let osc_handler = OSCHandler::new(
         piblaster,
         hashmap! {
-            OscPath::new("/1/fader1".to_string()) => GpioPin::new(0)
+            OscPath::new("/1/fader1".to_string()) => vec![GpioPin::new(0)]
         },
     );
     receive_osc_packets(addr, osc_handler, running)?;
