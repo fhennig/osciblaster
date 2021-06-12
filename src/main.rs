@@ -6,7 +6,7 @@ use clap::{AppSettings, Clap};
 use conf::Config;
 use log::{info, trace};
 use osc_handler::OSCHandler;
-use piblaster::{GpioPin, PiBlaster};
+use piblaster::PiBlaster;
 use simplelog as sl;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};

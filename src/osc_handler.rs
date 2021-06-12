@@ -74,7 +74,6 @@ impl OSCHandler {
 
     pub fn handle_packet(&mut self, packet: OscPacket) -> Result<()> {
         self.handle_packet_internal(packet)?;
-        self.piblaster.ensure_write_out()?;
         Ok(())
     }
 }
