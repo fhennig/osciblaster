@@ -90,16 +90,17 @@ fn main() -> Result<()> {
     let opts: Opts = Opts::parse();
     let verbosity = if opts.quiet { -1 } else { opts.verbose };
     init_logger(verbosity);
+    // config
+    let conf = Config::new()?;
     let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), opts.port);
     info!("Listening on address {}", addr);
-    let conf = Config::new()?;
-    let piblaster = PiBlaster::new(&"./piblaster.out".to_string(), &vec![GpioPin::new(0)])?;
+    let piblaster = PiBlaster::new(&"/dev/pi-blaster".to_string(), &conf.get_all_used_pins())?;
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
     })?;
-    let osc_handler = OSCHandler::new(piblaster, conf.path_pin_map);
+    let osc_handler = OSCHandler::new(piblaster, conf.get_path_pin_map().clone());
     receive_osc_packets(addr, osc_handler, running)?;
     Ok(())
 }

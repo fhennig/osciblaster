@@ -7,7 +7,7 @@ use std::fs;
 use yaml_rust::{Yaml, YamlLoader};
 
 pub struct Config {
-    pub path_pin_map: HashMap<OscPath, Vec<GpioPin>>,
+    path_pin_map: HashMap<OscPath, Vec<GpioPin>>,
 }
 
 fn as_osc_path(yaml: &Yaml) -> Result<OscPath> {
@@ -62,5 +62,19 @@ impl Config {
         Ok(Self {
             path_pin_map: pin_map,
         })
+    }
+
+    pub fn get_path_pin_map(&self) -> &HashMap<OscPath, Vec<GpioPin>> {
+        &self.path_pin_map
+    }
+
+    pub fn get_all_used_pins(&self) -> Vec<GpioPin> {
+        let mut v = vec![];
+        for (_, pins) in &self.path_pin_map {
+            for pin in pins {
+                v.push(*pin);
+            }
+        }
+        v
     }
 }
