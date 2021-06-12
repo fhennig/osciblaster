@@ -3,9 +3,10 @@ mod osc_handler;
 mod piblaster;
 use anyhow::Result;
 use clap::{AppSettings, Clap};
+use conf::Config;
 use log::{info, trace};
 use maplit::hashmap;
-use osc_handler::{OscPath, OSCHandler};
+use osc_handler::{OSCHandler, OscPath};
 use piblaster::{GpioPin, PiBlaster};
 use simplelog as sl;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
@@ -92,7 +93,7 @@ fn main() -> Result<()> {
     init_logger(verbosity);
     let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), opts.port);
     info!("Listening on address {}", addr);
-    conf::load_config()?;
+    let conf = Config::new()?;
     let piblaster = PiBlaster::new(&"./piblaster.out".to_string(), &vec![GpioPin::new(0)])?;
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -101,9 +102,7 @@ fn main() -> Result<()> {
     })?;
     let osc_handler = OSCHandler::new(
         piblaster,
-        hashmap! {
-            OscPath::new("/1/fader1".to_string()) => vec![GpioPin::new(0)]
-        },
+        conf.path_pin_map,
     );
     receive_osc_packets(addr, osc_handler, running)?;
     Ok(())
