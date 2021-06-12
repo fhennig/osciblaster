@@ -1,10 +1,10 @@
 use crate::osc_handler::OscPath;
 use crate::piblaster::GpioPin;
 use anyhow::{bail, Result};
-use log::{info, debug};
+use log::debug;
+use std::collections::HashMap;
 use std::fs;
 use yaml_rust::{Yaml, YamlLoader};
-use std::collections::HashMap;
 
 pub struct Config {
     pub path_pin_map: HashMap<OscPath, Vec<GpioPin>>,

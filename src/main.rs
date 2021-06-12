@@ -5,8 +5,7 @@ use anyhow::Result;
 use clap::{AppSettings, Clap};
 use conf::Config;
 use log::{info, trace};
-use maplit::hashmap;
-use osc_handler::{OSCHandler, OscPath};
+use osc_handler::OSCHandler;
 use piblaster::{GpioPin, PiBlaster};
 use simplelog as sl;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
@@ -100,10 +99,7 @@ fn main() -> Result<()> {
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
     })?;
-    let osc_handler = OSCHandler::new(
-        piblaster,
-        conf.path_pin_map,
-    );
+    let osc_handler = OSCHandler::new(piblaster, conf.path_pin_map);
     receive_osc_packets(addr, osc_handler, running)?;
     Ok(())
 }
