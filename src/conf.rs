@@ -5,9 +5,12 @@ use log::debug;
 use std::collections::HashMap;
 use std::fs;
 use yaml_rust::{Yaml, YamlLoader};
+use std::convert::TryFrom;
 
 pub struct Config {
     path_pin_map: HashMap<OscPath, Vec<GpioPin>>,
+    pibaster_dev_file: String,
+    port: u16,
 }
 
 fn as_osc_path(yaml: &Yaml) -> Result<OscPath> {
@@ -59,8 +62,22 @@ impl Config {
         } else {
             bail!("The osc_pin_map needs to be a dictionary.");
         }
+        // get the piblaster path
+        let path = if let Some(s) = doc["piblaster"].as_str() {
+            s.to_string()
+        } else {
+            bail!("...")
+        };
+        // get port
+        let port = if let Some(i) = doc["port"].as_i64() {
+            u16::try_from(i)?
+        } else {
+            bail!("...")
+        };
         Ok(Self {
             path_pin_map: pin_map,
+            pibaster_dev_file: path,
+            port: port,
         })
     }
 
@@ -76,5 +93,13 @@ impl Config {
             }
         }
         v
+    }
+
+    pub fn get_piblaster_dev_file(&self) -> &String {
+        &self.pibaster_dev_file
+    }
+
+    pub fn get_port(&self) -> u16 {
+        self.port
     }
 }

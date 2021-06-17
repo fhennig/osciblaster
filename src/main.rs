@@ -45,13 +45,6 @@ fn receive_osc_packets(
     Ok(())
 }
 
-// TODO
-// Create a config file that defines which pin is mapped to which path
-// 0: /topLeft/red
-// 3: /topLeft/blue
-// 4: /topLeft/green
-// etc...
-
 #[derive(Clap)]
 #[clap(setting = AppSettings::ColoredHelp)]
 struct Opts {
@@ -61,9 +54,9 @@ struct Opts {
     /// Print no output at all
     #[clap(short, long)]
     quiet: bool,
-    /// The port to listen on
+    /// The port to listen on. Overrides the port set in the config file
     #[clap(short, long)]
-    port: u16,
+    port: Option<u16>,
 }
 
 fn level_filter_from_level_index(level_index: isize) -> sl::LevelFilter {
@@ -92,9 +85,14 @@ fn main() -> Result<()> {
     init_logger(verbosity);
     // config
     let conf = Config::new()?;
-    let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), opts.port);
+    let port = if let Some(p) = opts.port {
+        p
+    } else {
+        conf.get_port()
+    };
+    let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port);
     info!("Listening on address {}", addr);
-    let piblaster = PiBlaster::new(&"/dev/pi-blaster".to_string(), &conf.get_all_used_pins())?;
+    let piblaster = PiBlaster::new(&conf.get_piblaster_dev_file(), &conf.get_all_used_pins())?;
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
