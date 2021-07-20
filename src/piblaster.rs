@@ -15,6 +15,7 @@ impl GpioPin {
     }
 }
 
+/// Wraps the pi-blaster file.  Does internal caching to prevent setting the same value twice.
 pub struct PiBlaster {
     current_values: HashMap<GpioPin, f32>,
     outfile: File,
