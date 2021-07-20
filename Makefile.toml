@@ -1,0 +1,4 @@
+[tasks.pibuild]
+install_crate = { crate_name = "cross", binary = "cross", test_arg = "--help" }
+command = "cross"
+args = ["build", "--target=armv7-unknown-linux-gnueabihf", "--release"]
