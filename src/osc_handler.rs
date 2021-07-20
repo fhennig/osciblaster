@@ -15,11 +15,12 @@ impl OscPath {
     }
 }
 
+/// The OSC handler uses a pi-blaster instance and a map of paths to pins to set pins to values
+/// based on the path-pin map and the values received in OSC packets.
 pub struct OSCHandler {
     piblaster: PiBlaster,
     path_map: HashMap<OscPath, Vec<GpioPin>>,
 }
-
 impl OSCHandler {
     pub fn new(piblaster: PiBlaster, path_map: HashMap<OscPath, Vec<GpioPin>>) -> Self {
         Self {

@@ -7,40 +7,16 @@ use std::convert::TryFrom;
 use std::fs;
 use yaml_rust::{Yaml, YamlLoader};
 
+/// The config, containing the port to run on, the path to the pi-blaster file
+/// and the map of OSC paths to pins.
 pub struct Config {
     path_pin_map: HashMap<OscPath, Vec<GpioPin>>,
     pibaster_dev_file: String,
     port: u16,
 }
 
-fn as_osc_path(yaml: &Yaml) -> Result<OscPath> {
-    if let Some(s) = yaml.as_str() {
-        Ok(OscPath::new(s.to_string()))
-    } else {
-        bail!("Could not convert value into a string.");
-    }
-}
-
-fn as_gpio_pin_vector(yaml: &Yaml) -> Result<Vec<GpioPin>> {
-    let mut v = vec![];
-    if let Some(pin) = yaml.as_i64() {
-        v.push(GpioPin::new(pin as usize));
-    } else if let Some(vec) = yaml.as_vec() {
-        for y in vec {
-            if let Some(i) = y.as_i64() {
-                v.push(GpioPin::new(i as usize));
-            } else {
-                bail!("Vector contains non-integer value.");
-            }
-        }
-    }
-    if v.len() == 0 {
-        bail!("Could not parse integer or vector of integers.");
-    }
-    Ok(v)
-}
-
 impl Config {
+    /// Creates a new config by reading from the path 'conf.yaml'.
     pub fn new() -> Result<Self> {
         let config_raw = fs::read_to_string("conf.yaml")?;
         // get the doc
@@ -102,4 +78,35 @@ impl Config {
     pub fn get_port(&self) -> u16 {
         self.port
     }
+}
+
+/// Convert a YAML value to an OSC path if possible.
+fn as_osc_path(yaml: &Yaml) -> Result<OscPath> {
+    if let Some(s) = yaml.as_str() {
+        Ok(OscPath::new(s.to_string()))
+    } else {
+        bail!("Could not convert value into a string.");
+    }
+}
+
+/// Converts a YAML value to a list of pins.  If there is only a single pin (integer)
+/// a list with a single value is created.
+/// At least a single pin needs to be given, and only integer values are supported.
+fn as_gpio_pin_vector(yaml: &Yaml) -> Result<Vec<GpioPin>> {
+    let mut v = vec![];
+    if let Some(pin) = yaml.as_i64() {
+        v.push(GpioPin::new(pin as usize));
+    } else if let Some(vec) = yaml.as_vec() {
+        for y in vec {
+            if let Some(i) = y.as_i64() {
+                v.push(GpioPin::new(i as usize));
+            } else {
+                bail!("Vector contains non-integer value.");
+            }
+        }
+    }
+    if v.len() == 0 {
+        bail!("Could not parse integer or vector of integers.");
+    }
+    Ok(v)
 }
