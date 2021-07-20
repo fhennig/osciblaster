@@ -12,13 +12,14 @@ Every path will accept a single float argument that it will set the pin to.
 
 ## Build
 
-This project uses [cross](https://github.com/rust-embedded/cross) to cross-compile for the ARMv7, the Raspberry Pi
-architecture. Run
+Building a binary for the Raspberry Pi can be done by building on the Raspberry Pi itself, or with cross-compiling.
 
-    cross build --release
-
-To build a release binary deployable on the Raspberry Pi.
+Install [`cargo-make`](https://sagiegurari.github.io/cargo-make/) and run `cargo make pibuild` 
+to build a release binary deployable on the Raspberry Pi.
 The file will be placed in `target/armv7-unknown-linux-gnueabihf/release/osciblaster`.
+
+`cargo-make` will install (`cross`)[https://github.com/rust-embedded/cross] if it is not installed and run the build process.
+`cross` uses a docker container to run the build for the ARMv7 architecture.
 
 ## Setup
 
