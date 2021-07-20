@@ -44,7 +44,7 @@ impl PiBlaster {
         let s = format!("{}={}\n", pin.index, value);
         let s = s.as_bytes();
         trace!("Writing line to file");
-        self.outfile.write_all(s)?;  // for a FIFO, synchronization is not necessary
+        self.outfile.write_all(s)?; // for a FIFO, synchronization is not necessary
         Ok(())
     }
 }

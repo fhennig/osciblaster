@@ -3,9 +3,9 @@ use crate::piblaster::GpioPin;
 use anyhow::{bail, Result};
 use log::debug;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fs;
 use yaml_rust::{Yaml, YamlLoader};
-use std::convert::TryFrom;
 
 pub struct Config {
     path_pin_map: HashMap<OscPath, Vec<GpioPin>>,
